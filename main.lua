@@ -59,7 +59,8 @@ function plugin:init()
     self.ui.menu:registerToMainMenu(self)
 
     if self:getSetting("fetch_on_start") then
-        UIManager:scheduleIn(5, function() self:checkInbox() end)
+        -- silent: do not prompt for network at startup; fetch silently once online
+        UIManager:scheduleIn(5, function() self:checkInbox(true) end)
     end
 end
 
@@ -281,21 +282,30 @@ end
 
 -- ---------- fetch ----------
 
-function plugin:checkInbox()
+function plugin:checkInbox(silent)
     local email = self:getSetting("email")
     local password = self:getSetting("password")
     if not email or email == "" or not password or password == "" then
-        UIManager:show(InfoMessage:new{
-            text = _("MailPush is not configured.\nTools > MailPush > Account"),
-            timeout = 4,
-        })
+        if not silent then
+            UIManager:show(InfoMessage:new{
+                text = _("MailPush is not configured.\nTools > MailPush > Account"),
+                timeout = 4,
+            })
+        end
         return
     end
 
-    -- If offline: ask NetworkMgr to turn on WiFi / re-run us when online.
+    -- If offline: silently register a rerun when the network comes up.
     -- This is the reliable "fetch when connected" mechanism on Android --
     -- no fake background polling, we simply run whenever we are online.
-    if NetworkMgr:willRerunWhenOnline(function() self:checkInbox() end) then
+    -- silent mode (auto fetch on start) never pops the WiFi prompt;
+    -- manual fetch keeps the prompt so the user knows why nothing happened.
+    if not NetworkMgr:isOnline() then
+        if silent then
+            NetworkMgr:doNothingAndWaitForConnection(function() self:checkInbox(true) end)
+        else
+            NetworkMgr:willRerunWhenOnline(function() self:checkInbox() end)
+        end
         return
     end
 
